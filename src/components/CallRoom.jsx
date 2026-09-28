@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Mic, MicOff, Video, VideoOff, PhoneOff, Zap, Clock, Send, Sparkles, CheckCircle2, HelpCircle, Volume2, MessageSquare, Lightbulb, Languages, X 
+  Mic, MicOff, PhoneOff, Zap, Clock, Send, Sparkles, Volume2, MessageSquare, Lightbulb, Languages, X 
 } from 'lucide-react';
 
 import AvatarCanvas from './AvatarCanvas';
@@ -12,7 +12,6 @@ import { callGeminiCoach, generateDynamicGreeting, translateHindiToCorporateEngl
 export default function CallRoom({ topic, avatar, settings, onEndCall }) {
   const [callDuration, setCallDuration] = useState(0);
   const [isMicMuted, setIsMicMuted] = useState(false);
-  const [isCamEnabled, setIsCamEnabled] = useState(settings?.cameraEnabled ?? true);
   const [showDrawer, setShowDrawer] = useState(true);
 
   // Skill Level & Gender
@@ -39,10 +38,6 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
   const latestSpeechTextRef = useRef('');
   const chatEndRef = useRef(null);
 
-  // User Webcam Stream
-  const videoRef = useRef(null);
-  const userMediaStream = useRef(null);
-
   // Auto Scroll Chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -59,33 +54,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     return () => clearInterval(timer);
   }, []);
 
-  // 2. User Webcam Setup
-  useEffect(() => {
-    if (isCamEnabled) {
-      navigator.mediaDevices?.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          userMediaStream.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        })
-        .catch(() => {
-          setIsCamEnabled(false);
-        });
-    } else {
-      if (userMediaStream.current) {
-        userMediaStream.current.getTracks().forEach(track => track.stop());
-      }
-    }
-
-    return () => {
-      if (userMediaStream.current) {
-        userMediaStream.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [isCamEnabled]);
-
-  // 3. Dynamic Initial AI Greeting Call
+  // 2. Dynamic Initial AI Greeting Call
   useEffect(() => {
     let isMounted = true;
 
@@ -117,7 +86,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     speechEngine.stopListening();
     clearSilenceTimer();
 
-    // 150ms delay allows mobile OS audio hardware to release microphone track before playing speaker audio
+    // 100ms hardware transition delay
     setTimeout(() => {
       speechEngine.unlockAudioContext();
       const targetVoiceCode = avatar.voiceCode || settings?.voiceAccent || 'en-IN';
@@ -125,7 +94,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
       speechEngine.speak(
         text,
         targetVoiceCode,
-        settings?.speechRate || (skillLevel === 'beginner' ? 0.9 : 1.0),
+        settings?.speechRate || (skillLevel === 'beginner' ? 0.95 : 1.05),
         isFemaleAvatar,
         () => setIsSpeaking(true),
         () => {
@@ -133,7 +102,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
           startUserListening();
         }
       );
-    }, 150);
+    }, 100);
   };
 
   // Replay AI Voice
@@ -157,7 +126,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
         latestSpeechTextRef.current = spokenText;
         
         if (spokenText && spokenText.trim().length > 0) {
-          const liveAnalysis = analyzeSpeechTurn(spokenText, 12);
+          const liveAnalysis = analyzeSpeechTurn(spokenText, 10);
           setCurrentTurnAnalysis(liveAnalysis);
 
           resetSilenceTimer();
@@ -169,18 +138,18 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     );
   };
 
-  // Auto-Silence Timer
+  // Snappy Auto-Silence Timer (1.0 second silence detection for fast STT)
   const resetSilenceTimer = () => {
     clearSilenceTimer();
-    setSilenceCountdown(2);
+    setSilenceCountdown(1);
 
     silenceTimerRef.current = setTimeout(() => {
       const currentText = latestSpeechTextRef.current;
-      if (currentText && currentText.trim().length > 2) {
+      if (currentText && currentText.trim().length > 1) {
         handleUserSubmitTurn(currentText);
       }
       setSilenceCountdown(null);
-    }, 1800);
+    }, 1000);
   };
 
   const clearSilenceTimer = () => {
@@ -204,7 +173,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     setCurrentInterimText('');
     latestSpeechTextRef.current = '';
 
-    const finalTurnAnalysis = analyzeSpeechTurn(textToSubmit, 15);
+    const finalTurnAnalysis = analyzeSpeechTurn(textToSubmit, 10);
 
     const userTurn = {
       sender: 'user',
@@ -219,7 +188,6 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     let aiResponseText = '';
     const userApiKey = settings?.geminiApiKey || '';
 
-    // Pass updatedTranscript for multi-turn conversation memory
     const geminiResult = await callGeminiCoach(textToSubmit, topic, avatar, skillLevel, userApiKey, updatedTranscript);
 
     if (geminiResult && geminiResult.spokenResponse) {
@@ -247,6 +215,13 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     triggerAISpeech(aiResponseText);
   };
 
+  const handleEndCallAction = () => {
+    clearSilenceTimer();
+    speechEngine.stopSpeaking();
+    speechEngine.stopListening();
+    onEndCall(transcript, callDuration);
+  };
+
   // Hindi Translation Action
   const handleTranslateHindi = async () => {
     if (!hindiInputText.trim()) return;
@@ -260,13 +235,6 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     }
   };
 
-  const handleEndCallAction = () => {
-    clearSilenceTimer();
-    speechEngine.stopSpeaking();
-    speechEngine.stopListening();
-    onEndCall(transcript, callDuration);
-  };
-
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -278,22 +246,22 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
   return (
     <div className="flex flex-col min-h-[calc(100vh-100px)] max-w-7xl mx-auto px-3 sm:px-4 pb-8">
       
-      {/* Top Mobile PWA Voice Unlock Alert Banner */}
+      {/* Top Mobile Voice Unlock Alert Banner */}
       <div 
         onClick={() => handleReplayAISpeech()}
-        className="mb-3 p-2.5 sm:p-3 rounded-2xl bg-indigo-950/70 border border-indigo-400/40 text-xs text-indigo-200 flex items-center justify-between cursor-pointer hover:bg-indigo-900/80 transition-all shadow-lg"
+        className="mb-3 p-2.5 sm:p-3 rounded-2xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-900 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-all shadow-xs"
       >
         <div className="flex items-center gap-2">
-          <Volume2 className="w-4 h-4 text-indigo-400 animate-pulse flex-shrink-0" />
-          <span className="font-medium text-[11px] sm:text-xs">Mobile PWA Voice: Tap here anytime if you cannot hear the AI voice!</span>
+          <Volume2 className="w-4 h-4 text-indigo-600 animate-pulse flex-shrink-0" />
+          <span className="font-semibold text-[11px] sm:text-xs">Mobile Audio Voice: Tap here anytime if you cannot hear the AI voice!</span>
         </div>
         <span className="badge badge-indigo text-[10px] bg-indigo-600 text-white px-2 py-0.5 flex-shrink-0">
           🔊 Tap to Hear AI
         </span>
       </div>
 
-      {/* Top Call Info HUD Header */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between glass-panel p-3.5 sm:px-6 sm:py-3.5 mb-4 border-indigo-500/20 gap-3">
+      {/* Top Call Info HUD Header (Light Theme) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between glass-panel p-3.5 sm:px-6 sm:py-3.5 mb-4 border-slate-200 bg-white gap-3 shadow-sm">
         
         {/* Left: Scenario Title & Mobile Top-Pinned End Call Button */}
         <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
@@ -301,17 +269,17 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
             <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
             <div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h2 className="font-display font-bold text-sm sm:text-base text-white">{topic.title}</h2>
+                <h2 className="font-display font-bold text-sm sm:text-base text-slate-900">{topic.title}</h2>
                 <span className="badge badge-emerald text-[8px] sm:text-[9px] py-0.5 px-1.5">LIVE TUTOR</span>
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-400">With {avatar.name} ({avatar.accent})</p>
+              <p className="text-[11px] sm:text-xs text-slate-500">With {avatar.name} ({avatar.accent})</p>
             </div>
           </div>
 
           {/* Mobile Top-Pinned End Call Button */}
           <button
             onClick={handleEndCallAction}
-            className="sm:hidden btn-danger py-1.5 px-3 text-xs flex items-center gap-1 shadow-rose-500/30 flex-shrink-0 font-bold"
+            className="sm:hidden btn-danger py-1.5 px-3 text-xs flex items-center gap-1 shadow-rose-500/20 flex-shrink-0 font-bold"
           >
             <PhoneOff className="w-4 h-4" />
             <span>End Call</span>
@@ -323,10 +291,10 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
           {/* Replay Voice Button */}
           <button
             onClick={() => handleReplayAISpeech()}
-            className="btn-secondary py-1.5 px-2.5 sm:px-3 text-xs bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 flex items-center gap-1.5 whitespace-nowrap"
+            className="btn-secondary py-1.5 px-2.5 sm:px-3 text-xs bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 whitespace-nowrap"
             title="Replay AI Voice"
           >
-            <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+            <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
             <span>Replay Voice</span>
           </button>
 
@@ -341,15 +309,15 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
           </button>
 
           {/* Call Timer */}
-          <div className="flex items-center gap-1.5 bg-slate-900/80 px-2.5 sm:px-3.5 py-1.5 rounded-xl border border-white/10 font-mono text-xs sm:text-sm font-semibold text-cyan-400 whitespace-nowrap">
-            <Clock className="w-3.5 h-3.5 text-cyan-400" />
+          <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 sm:px-3.5 py-1.5 rounded-xl border border-slate-200 font-mono text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
+            <Clock className="w-3.5 h-3.5 text-indigo-600" />
             {formatTime(callDuration)}
           </div>
 
           {/* Show / Hide Coach */}
           <button
             onClick={() => setShowDrawer(!showDrawer)}
-            className={`btn-secondary py-1.5 px-2.5 sm:px-3 text-xs whitespace-nowrap ${showDrawer ? 'bg-indigo-600/30 border-indigo-500/40 text-indigo-300' : ''}`}
+            className={`btn-secondary py-1.5 px-2.5 sm:px-3 text-xs whitespace-nowrap ${showDrawer ? 'bg-indigo-100 border-indigo-300 text-indigo-800' : ''}`}
           >
             <Zap className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{showDrawer ? 'Hide Coach' : 'Show Coach'}</span>
@@ -358,7 +326,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
           {/* Desktop End Call Button */}
           <button
             onClick={handleEndCallAction}
-            className="hidden sm:flex btn-danger py-1.5 px-4 text-xs items-center gap-1.5 shadow-rose-500/30 whitespace-nowrap font-bold"
+            className="hidden sm:flex btn-danger py-1.5 px-4 text-xs items-center gap-1.5 shadow-rose-500/20 whitespace-nowrap font-bold"
           >
             <PhoneOff className="w-3.5 h-3.5" />
             <span>End Call</span>
@@ -369,10 +337,10 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
       {/* Main Call Stage */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         
-        {/* Left Column: Avatar & Webcam Frame */}
+        {/* Left Column: Avatar Frame */}
         <div className="lg:col-span-2 flex flex-col gap-4">
           
-          <div className="relative rounded-3xl overflow-hidden glass-panel border-indigo-500/20 h-[380px]">
+          <div className="relative rounded-3xl overflow-hidden glass-panel border-slate-200 h-[360px] sm:h-[440px] bg-slate-900">
             <AvatarCanvas
               avatar={avatar}
               isSpeaking={isSpeaking}
@@ -380,64 +348,43 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
               lastAIText={lastAITurn}
             />
 
-            {/* Webcam Preview */}
-            <div className="absolute top-4 right-4 w-32 sm:w-44 aspect-video rounded-2xl overflow-hidden border-2 border-indigo-500/40 shadow-2xl bg-slate-950">
-              {isCamEnabled ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover transform -scale-x-100"
-                />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-500 text-[10px]">
-                  <VideoOff className="w-5 h-5 mb-1 text-slate-500" />
-                  Camera Off
-                </div>
-              )}
-              <div className="absolute bottom-1.5 left-2 bg-slate-900/80 backdrop-blur-xs px-1.5 py-0.5 rounded text-[9px] font-bold text-white">
-                You
-              </div>
-            </div>
-
             {/* Hands-Free Indicator */}
             {isListening && (
-              <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-2xl border border-emerald-500/40 shadow-xl">
+              <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-emerald-300 shadow-lg">
                 <div className="flex items-end gap-1">
                   <div className="audio-bar" />
                   <div className="audio-bar" />
                   <div className="audio-bar" />
                 </div>
-                <div className="text-[11px] text-emerald-400 font-bold">
-                  {silenceCountdown ? `Listening... Auto-submitting soon` : `Listening (Speak naturally)`}
+                <div className="text-[11px] text-emerald-700 font-bold">
+                  {silenceCountdown ? `Listening... Auto-submitting` : `Listening (Speak naturally)`}
                 </div>
               </div>
             )}
           </div>
 
           {/* Teacher Guidance Buttons */}
-          <div className="glass-panel p-4 rounded-2xl border-indigo-500/20 bg-slate-900/90">
-            <p className="text-xs font-bold text-indigo-300 flex items-center gap-1.5 mb-2">
-              <Lightbulb className="w-4 h-4 text-amber-400" />
+          <div className="glass-panel p-4 rounded-2xl border-slate-200 bg-white">
+            <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-2">
+              <Lightbulb className="w-4 h-4 text-amber-500" />
               Ask {avatar.name} (Your AI Teacher) for Guidance:
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button
                 onClick={() => handleUserSubmitTurn(`${avatar.name}, please ask me a different follow-up question based on what we discussed.`)}
-                className="text-xs bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 border border-amber-500/30 p-2.5 rounded-xl transition-all text-left font-medium"
+                className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 p-2.5 rounded-xl transition-all text-left font-semibold"
               >
                 🎲 "Ask me a different question"
               </button>
               <button
-                onClick={() => handleUserSubmitTurn(`Priya, what is a better corporate English way to say my last answer?`)}
-                className="text-xs bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-200 border border-indigo-500/30 p-2.5 rounded-xl transition-all text-left font-medium"
+                onClick={() => handleUserSubmitTurn(`${avatar.name}, what is a better corporate English way to say my last answer?`)}
+                className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 p-2.5 rounded-xl transition-all text-left font-semibold"
               >
                 💡 "What is a better corporate way to say this?"
               </button>
               <button
                 onClick={() => setShowHindiModal(true)}
-                className="text-xs bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-200 border border-amber-500/30 p-2.5 rounded-xl transition-all text-left font-semibold"
+                className="text-xs bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-900 border border-amber-300 p-2.5 rounded-xl transition-all text-left font-bold"
               >
                 🇮🇳 "Translate Hindi to Corporate English"
               </button>
@@ -446,11 +393,11 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
 
         </div>
 
-        {/* Right Column: Full Speech-to-Text Live Chat Log */}
-        <div className="flex flex-col glass-panel p-4 rounded-3xl border-white/10 h-[520px]">
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
-            <h3 className="font-display font-bold text-sm text-white flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-cyan-400" />
+        {/* Right Column: Full Speech-to-Text Live Chat Log (Light Theme) */}
+        <div className="flex flex-col glass-panel p-4 rounded-3xl border-slate-200 bg-white h-[460px] sm:h-[540px]">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
+            <h3 className="font-display font-bold text-sm text-slate-900 flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-indigo-600" />
               Live Speech-to-Text Chat
             </h3>
             <span className="badge badge-indigo text-[9px]">{transcript.length} Messages</span>
@@ -462,20 +409,20 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
                 key={i}
                 className={`p-3 rounded-2xl text-xs flex flex-col ${
                   turn.sender === 'ai'
-                    ? 'bg-indigo-950/40 border border-indigo-500/30 text-indigo-100 self-start'
-                    : 'bg-slate-900 border border-emerald-500/30 text-emerald-100 self-end'
+                    ? 'bg-indigo-50/80 border border-indigo-200 text-indigo-950 self-start'
+                    : 'bg-emerald-50/80 border border-emerald-200 text-emerald-950 self-end'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className={`font-bold text-[11px] ${turn.sender === 'ai' ? 'text-indigo-400' : 'text-emerald-400'}`}>
+                  <span className={`font-bold text-[11px] ${turn.sender === 'ai' ? 'text-indigo-700' : 'text-emerald-700'}`}>
                     {turn.sender === 'ai' ? avatar.name : 'You (Speech-to-Text)'}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-500">{turn.timestamp}</span>
+                    <span className="text-[10px] text-slate-400">{turn.timestamp}</span>
                     {turn.sender === 'ai' && (
                       <button
                         onClick={() => handleReplayAISpeech(turn.text)}
-                        className="p-1 rounded bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/40"
+                        className="p-1 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
                         title="Replay Voice"
                       >
                         <Volume2 className="w-3 h-3" />
@@ -489,9 +436,16 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
             ))}
 
             {currentInterimText && (
-              <div className="p-3 rounded-2xl text-xs bg-cyan-950/40 border border-cyan-500/40 text-cyan-300 italic">
-                <span className="font-bold text-[10px] block mb-0.5 text-cyan-400">You are speaking...</span>
+              <div className="p-3 rounded-2xl text-xs bg-cyan-50 border border-cyan-200 text-cyan-900 italic">
+                <span className="font-bold text-[10px] block mb-0.5 text-cyan-700">You are speaking...</span>
                 "{currentInterimText}"
+              </div>
+            )}
+
+            {isAIProcessing && (
+              <div className="p-3 rounded-2xl text-xs bg-indigo-50 border border-indigo-200 text-indigo-700 animate-pulse italic flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600 animate-spin" />
+                <span>{avatar.name} is thinking and replying...</span>
               </div>
             )}
 
@@ -508,18 +462,18 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
         onToggle={() => setShowDrawer(!showDrawer)}
       />
 
-      {/* Hindi to Corporate English Translator Modal */}
+      {/* Hindi to Corporate English Translator Modal (Light Theme) */}
       {showHindiModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
-          <div className="w-full max-w-lg glass-panel border-amber-500/30 p-6 rounded-3xl shadow-2xl">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg glass-panel border-amber-300 p-6 rounded-3xl shadow-2xl bg-white">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                <div className="p-2 rounded-xl bg-amber-100 text-amber-800">
                   <Languages className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-base text-white">Hindi ➜ Corporate English Helper</h3>
-                  <p className="text-[11px] text-slate-400">Speak or type in Hindi/Hinglish to get polished IT English</p>
+                  <h3 className="font-display font-bold text-base text-slate-900">Hindi ➜ Corporate English Helper</h3>
+                  <p className="text-[11px] text-slate-500">Speak or type in Hindi/Hinglish to get polished IT English</p>
                 </div>
               </div>
               <button
@@ -528,7 +482,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
                   setTranslatedEnglish(null);
                   startUserListening();
                 }}
-                className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-white"
+                className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:text-slate-900"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -536,7 +490,7 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Type or Speak your thought in Hindi/Hinglish:
                 </label>
                 <textarea
@@ -558,16 +512,16 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
               </button>
 
               {translatedEnglish && (
-                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs space-y-2 animate-in fade-in duration-300">
-                  <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Natural Indian Corporate English:</p>
-                  <p className="text-white font-bold text-sm leading-relaxed">"{translatedEnglish}"</p>
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs space-y-2">
+                  <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Natural Indian Corporate English:</p>
+                  <p className="text-slate-900 font-bold text-sm leading-relaxed">"{translatedEnglish}"</p>
                   
                   <div className="flex items-center gap-2 pt-2">
                     <button
                       onClick={() => {
                         speechEngine.speak(translatedEnglish, avatar.voiceCode || 'en-IN', 0.95, isFemaleAvatar);
                       }}
-                      className="btn-secondary py-1.5 px-3 text-[11px] flex items-center gap-1 text-amber-300 border-amber-500/30"
+                      className="btn-secondary py-1.5 px-3 text-[11px] flex items-center gap-1 text-amber-800 border-amber-300"
                     >
                       <Volume2 className="w-3.5 h-3.5" />
                       Listen Pronunciation
@@ -594,19 +548,19 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
       )}
 
       {/* Bottom Controls Toolbar */}
-      <div className="glass-panel p-3.5 sm:px-6 sm:py-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between border-white/10 gap-3">
-        <div className="flex items-center gap-2.5 text-xs text-slate-300 font-medium">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+      <div className="glass-panel p-3.5 sm:px-6 sm:py-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between border-slate-200 bg-white gap-3 shadow-sm">
+        <div className="flex items-center gap-2.5 text-xs text-slate-600 font-medium">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
           <span className="text-[11px] sm:text-xs">Hands-free call active • Talk to {avatar.name} naturally</span>
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
           <button
             onClick={() => handleReplayAISpeech()}
-            className="p-2.5 sm:p-3 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 transition-all flex items-center gap-1.5 text-xs font-semibold"
+            className="p-2.5 sm:p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 transition-all flex items-center gap-1.5 text-xs font-semibold"
             title="Replay AI Speech Audio"
           >
-            <Volume2 className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+            <Volume2 className="w-4 h-4 text-indigo-600 flex-shrink-0" />
             <span className="text-[11px] sm:text-xs">Tap to Hear AI</span>
           </button>
 
@@ -622,8 +576,8 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
             }}
             className={`p-2.5 sm:p-3 rounded-xl border transition-all ${
               isMicMuted 
-                ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' 
-                : 'bg-slate-900 border-white/10 text-slate-200 hover:bg-white/10'
+                ? 'bg-rose-50 border-rose-200 text-rose-600' 
+                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
             }`}
             title={isMicMuted ? "Unmute Mic" : "Mute Mic"}
           >
@@ -631,20 +585,8 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
           </button>
 
           <button
-            onClick={() => setIsCamEnabled(!isCamEnabled)}
-            className={`p-2.5 sm:p-3 rounded-xl border transition-all ${
-              !isCamEnabled 
-                ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' 
-                : 'bg-slate-900 border-white/10 text-slate-200 hover:bg-white/10'
-            }`}
-            title={isCamEnabled ? "Disable Camera" : "Enable Camera"}
-          >
-            {isCamEnabled ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
-          </button>
-
-          <button
             onClick={handleEndCallAction}
-            className="btn-danger py-2 px-3 text-xs flex items-center gap-1.5 shadow-rose-500/30 font-bold"
+            className="btn-danger py-2 px-3 text-xs flex items-center gap-1.5 shadow-rose-500/20 font-bold"
             title="End Practice Call"
           >
             <PhoneOff className="w-4 h-4" />

@@ -2,13 +2,13 @@ import React from 'react';
 
 export default function AvatarCanvas({ avatar, isSpeaking, isListening, lastAIText }) {
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden rounded-3xl bg-slate-950 border border-indigo-500/30 shadow-2xl">
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden rounded-3xl bg-slate-900 border border-slate-200 shadow-lg">
       
       {/* Studio Background Ambient Glow */}
-      <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/40 via-slate-950 to-slate-950 pointer-events-none" />
+      <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/40 via-slate-900 to-slate-950 pointer-events-none" />
 
       {/* WitSpeak Style Stylized Digital Human Avatar Frame */}
-      <div className="relative h-full aspect-[3/4] max-w-full flex items-center justify-center overflow-hidden rounded-3xl border border-white/10 shadow-2xl bg-slate-900/60">
+      <div className="relative h-full aspect-[3/4] max-w-full flex items-center justify-center overflow-hidden rounded-3xl border border-white/10 shadow-2xl bg-slate-900">
         
         {/* Character Portrait Image */}
         <img
@@ -33,12 +33,12 @@ export default function AvatarCanvas({ avatar, isSpeaking, isListening, lastAITe
 
       {/* WitSpeak / Loora Style Floating Speech Dialog Bubble */}
       {lastAIText && (
-        <div className="absolute top-6 left-6 max-w-sm bg-slate-900/90 backdrop-blur-md p-4 rounded-2xl border border-white/20 shadow-2xl animate-in fade-in slide-in-from-top-3 duration-300 z-30">
-          <div className="flex items-start gap-3">
-            <span className="text-xl">😊</span>
+        <div className="absolute top-4 left-4 right-4 sm:right-auto max-w-md bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-xl animate-in fade-in slide-in-from-top-3 duration-300 z-30">
+          <div className="flex items-start gap-2.5">
+            <span className="text-lg">😊</span>
             <div>
-              <p className="text-xs font-bold text-indigo-300">{avatar.name}</p>
-              <p className="text-xs text-white font-medium leading-relaxed mt-0.5 line-clamp-3">
+              <p className="text-xs font-bold text-indigo-700">{avatar.name}</p>
+              <p className="text-xs text-slate-800 font-medium leading-relaxed mt-0.5 line-clamp-3">
                 "{lastAIText}"
               </p>
             </div>
@@ -47,26 +47,26 @@ export default function AvatarCanvas({ avatar, isSpeaking, isListening, lastAITe
       )}
 
       {/* WitSpeak Style Bottom Persona Tag & Audio Wave Indicator */}
-      <div className="absolute bottom-4 left-6 right-6 flex items-center justify-between z-30 pointer-events-none">
-        <div className="flex items-center gap-2.5 bg-slate-900/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/15 shadow-xl">
-          <div className={`w-3 h-3 rounded-full ${isSpeaking ? 'bg-indigo-400 animate-ping' : isListening ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between z-30 pointer-events-none">
+        <div className="flex items-center gap-2.5 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl border border-slate-200 shadow-xl">
+          <div className={`w-2.5 h-2.5 rounded-full ${isSpeaking ? 'bg-indigo-600 animate-ping' : isListening ? 'bg-emerald-600 animate-pulse' : 'bg-amber-500'}`} />
           <div>
             <div className="flex items-center gap-1.5">
-              <h4 className="text-xs font-bold text-white leading-tight">{avatar.name}</h4>
+              <h4 className="text-xs font-bold text-slate-900 leading-tight">{avatar.name}</h4>
               <span className="badge badge-emerald text-[8px] py-0 px-1.5">LIVE WITSPEAK AI</span>
             </div>
-            <p className="text-[10px] text-indigo-300 font-semibold">{avatar.title} • {avatar.accent}</p>
+            <p className="text-[10px] text-indigo-700 font-semibold">{avatar.title} • {avatar.accent}</p>
           </div>
         </div>
 
         {/* Live Audio Equalizer Bars when speaking */}
         {isSpeaking && (
-          <div className="flex items-end gap-1 bg-indigo-950/90 backdrop-blur-md px-3 py-2 rounded-xl border border-indigo-500/40 shadow-lg">
+          <div className="flex items-end gap-1 bg-white/95 backdrop-blur-md px-3 py-2 rounded-xl border border-indigo-200 shadow-lg">
             <div className="audio-bar" />
             <div className="audio-bar" />
             <div className="audio-bar" />
             <div className="audio-bar" />
-            <span className="text-[10px] font-bold text-indigo-300 ml-1.5">Speaking...</span>
+            <span className="text-[10px] font-bold text-indigo-700 ml-1.5">Speaking...</span>
           </div>
         )}
       </div>
