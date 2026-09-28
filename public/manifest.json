@@ -1,0 +1,31 @@
+{
+  "name": "SIVi-Tech AI English Speaking Coach",
+  "short_name": "SIVi-Tech",
+  "description": "Master IT & Tech English Speaking with AI Avatars, Real-Time Call Coaching, and Live Grammar Feedback",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "categories": ["education", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Daily Standup",
+      "url": "/?scenario=standup",
+      "description": "Practice your 2-minute daily standup update"
+    },
+    {
+      "name": "Tech Interview",
+      "url": "/?scenario=interview",
+      "description": "Practice system design & coding interview questions"
+    }
+  ]
+}
