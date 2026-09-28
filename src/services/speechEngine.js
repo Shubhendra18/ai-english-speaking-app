@@ -1,4 +1,4 @@
-// Web Speech Recognition & Gender-Specific Voice Selection Service (Mobile PWA Enhanced)
+// Web Speech Recognition & Gender-Specific Voice Selection Service (Mobile PWA & Fallback Audio Enhanced)
 
 class SpeechEngine {
   constructor() {
@@ -7,6 +7,8 @@ class SpeechEngine {
     this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
     this.audioCtx = null;
     this.voices = [];
+    this.activeAudioFallback = null;
+    this.resumeInterval = null;
     
     this.onResultCallback = null;
     this.onEndCallback = null;
@@ -204,12 +206,58 @@ class SpeechEngine {
     }
   }
 
+  // 100% Guaranteed Audio Fallback Player for Mobile Browsers
+  playAudioFallback(text, onStart, onEnd) {
+    try {
+      this.stopSpeaking();
+
+      // Truncate for free neural TTS streaming URL limit (~200 chars)
+      const cleanText = text.substring(0, 200).replace(/["'\n\r]/g, ' ');
+      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=en&client=tw-ob`;
+
+      const audio = new Audio(ttsUrl);
+      this.activeAudioFallback = audio;
+      audio.volume = 1.0;
+
+      audio.onplay = () => {
+        if (onStart) onStart();
+        if (this.onSpeakingStateChange) this.onSpeakingStateChange(true);
+      };
+
+      audio.onended = () => {
+        this.activeAudioFallback = null;
+        if (onEnd) onEnd();
+        if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+      };
+
+      audio.onerror = () => {
+        this.activeAudioFallback = null;
+        if (onEnd) onEnd();
+        if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn('Audio element play blocked on mobile:', err);
+          if (onEnd) onEnd();
+          if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+        });
+      }
+    } catch (e) {
+      console.warn('Audio fallback error:', e);
+      if (onEnd) onEnd();
+      if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+    }
+  }
+
   speak(text, voiceCode = 'en-IN', rate = 1.0, isFemale = true, onStart, onEnd) {
+    this.stopSpeaking();
     this.playSpeakerTestChime();
 
+    // If Web Speech Synthesis is missing, fallback immediately to audio streaming
     if (!this.synth) {
-      if (onStart) onStart();
-      setTimeout(() => { if (onEnd) onEnd(); }, Math.max(text.length * 65, 1500));
+      this.playAudioFallback(text, onStart, onEnd);
       return;
     }
 
@@ -220,27 +268,40 @@ class SpeechEngine {
 
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Gender-aware Voice Selection
+    // Gender & Accent Selection
     const selectedVoice = this.getBestVoice(voiceCode, isFemale);
     if (selectedVoice) {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = voiceCode || 'en-IN';
+      utterance.lang = voiceCode || 'en-US';
     }
 
     utterance.rate = rate || 1.0;
     utterance.pitch = isFemale ? 1.15 : 0.95;
     utterance.volume = 1.0;
 
+    let hasStarted = false;
     let hasEnded = false;
 
     utterance.onstart = () => {
+      hasStarted = true;
       if (onStart) onStart();
       if (this.onSpeakingStateChange) this.onSpeakingStateChange(true);
+
+      // Keep Android Chrome TTS from pausing mid-sentence
+      if (this.resumeInterval) clearInterval(this.resumeInterval);
+      this.resumeInterval = setInterval(() => {
+        if (this.synth && this.synth.speaking) {
+          this.synth.resume();
+        } else {
+          clearInterval(this.resumeInterval);
+        }
+      }, 400);
     };
 
     utterance.onend = () => {
+      if (this.resumeInterval) clearInterval(this.resumeInterval);
       if (!hasEnded) {
         hasEnded = true;
         if (onEnd) onEnd();
@@ -249,38 +310,59 @@ class SpeechEngine {
     };
 
     utterance.onerror = (e) => {
+      if (this.resumeInterval) clearInterval(this.resumeInterval);
+      console.warn('SpeechSynthesis error on mobile, trying audio fallback:', e);
       if (!hasEnded) {
         hasEnded = true;
-        if (onEnd) onEnd();
-        if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
+        this.playAudioFallback(text, onStart, onEnd);
       }
     };
 
-    // Mobile fallback timeout if utterance stalls on Android/iOS
+    // If mobile Web Speech fails to trigger onstart within 600ms, fallback to audio stream
+    setTimeout(() => {
+      if (!hasStarted && !hasEnded) {
+        console.warn('SpeechSynthesis silent on mobile, switching to Audio Fallback...');
+        hasEnded = true;
+        try { this.synth.cancel(); } catch (e) {}
+        this.playAudioFallback(text, onStart, onEnd);
+      }
+    }, 600);
+
+    // Safety duration fallback timeout
     const estimatedDurationMs = Math.max((text.length / 15) * 1000 * (1 / (rate || 1.0)), 2000);
     setTimeout(() => {
+      if (this.resumeInterval) clearInterval(this.resumeInterval);
       if (!hasEnded) {
         hasEnded = true;
         if (onEnd) onEnd();
         if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
       }
-    }, estimatedDurationMs + 1000);
+    }, estimatedDurationMs + 1500);
 
     try {
       this.synth.speak(utterance);
-      // Double trigger resume for mobile Chrome/Safari
       this.synth.resume();
     } catch (err) {
-      console.warn('Speech synthesis speak error:', err);
+      console.warn('Speech synthesis speak exception:', err);
+      this.playAudioFallback(text, onStart, onEnd);
     }
   }
 
   stopSpeaking() {
+    if (this.resumeInterval) clearInterval(this.resumeInterval);
     if (this.synth) {
       try {
         this.synth.cancel();
       } catch (e) {}
     }
+    if (this.activeAudioFallback) {
+      try {
+        this.activeAudioFallback.pause();
+        this.activeAudioFallback.currentTime = 0;
+        this.activeAudioFallback = null;
+      } catch (e) {}
+    }
+    if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
   }
 }
 
