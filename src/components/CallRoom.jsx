@@ -256,6 +256,13 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     }
   };
 
+  const handleEndCallAction = () => {
+    clearSilenceTimer();
+    speechEngine.stopSpeaking();
+    speechEngine.stopListening();
+    onEndCall(transcript, callDuration);
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -265,62 +272,89 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
   const lastAITurn = transcript.filter(t => t.sender === 'ai').slice(-1)[0]?.text;
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-100px)] max-w-7xl mx-auto px-4 pb-8">
+    <div className="flex flex-col min-h-[calc(100vh-100px)] max-w-7xl mx-auto px-3 sm:px-4 pb-8">
       
-      {/* Top Call Info HUD */}
-      <div className="flex flex-wrap items-center justify-between glass-panel px-6 py-3.5 mb-4 border-indigo-500/20 gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-display font-bold text-base text-white">{topic.title}</h2>
-              <span className="badge badge-emerald text-[9px] py-0.5 px-2">LIVE 1-ON-1 AI TUTOR</span>
+      {/* Top Mobile PWA Voice Unlock Alert Banner */}
+      <div 
+        onClick={() => handleReplayAISpeech()}
+        className="mb-3 p-2.5 sm:p-3 rounded-2xl bg-indigo-950/70 border border-indigo-400/40 text-xs text-indigo-200 flex items-center justify-between cursor-pointer hover:bg-indigo-900/80 transition-all shadow-lg"
+      >
+        <div className="flex items-center gap-2">
+          <Volume2 className="w-4 h-4 text-indigo-400 animate-pulse flex-shrink-0" />
+          <span className="font-medium text-[11px] sm:text-xs">Mobile PWA Voice: Tap here anytime if you cannot hear the AI voice!</span>
+        </div>
+        <span className="badge badge-indigo text-[10px] bg-indigo-600 text-white px-2 py-0.5 flex-shrink-0">
+          🔊 Tap to Hear AI
+        </span>
+      </div>
+
+      {/* Top Call Info HUD Header */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between glass-panel p-3.5 sm:px-6 sm:py-3.5 mb-4 border-indigo-500/20 gap-3">
+        
+        {/* Left: Scenario Title & Mobile Top-Pinned End Call Button */}
+        <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2.5">
+            <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+            <div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="font-display font-bold text-sm sm:text-base text-white">{topic.title}</h2>
+                <span className="badge badge-emerald text-[8px] sm:text-[9px] py-0.5 px-1.5">LIVE TUTOR</span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-400">With {avatar.name} ({avatar.accent})</p>
             </div>
-            <p className="text-xs text-slate-400">Practicing with {avatar.name} ({avatar.accent})</p>
           </div>
+
+          {/* Mobile Top-Pinned End Call Button */}
+          <button
+            onClick={handleEndCallAction}
+            className="sm:hidden btn-danger py-1.5 px-3 text-xs flex items-center gap-1 shadow-rose-500/30 flex-shrink-0 font-bold"
+          >
+            <PhoneOff className="w-4 h-4" />
+            <span>End Call</span>
+          </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Hindi to Corporate English Translator Button */}
-          <button
-            onClick={() => setShowHindiModal(true)}
-            className="btn-primary py-1.5 px-3 text-xs bg-gradient-to-r from-amber-600 to-orange-600 shadow-amber-500/20"
-            title="Translate Hindi thoughts to Corporate English"
-          >
-            <Languages className="w-3.5 h-3.5" />
-            <span>🇮🇳 Hindi ➜ Corporate English</span>
-          </button>
-
+        {/* Right: Controls & Desktop End Call */}
+        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto no-scrollbar py-1">
+          {/* Replay Voice Button */}
           <button
             onClick={() => handleReplayAISpeech()}
-            className="btn-secondary py-1.5 px-3 text-xs bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40"
+            className="btn-secondary py-1.5 px-2.5 sm:px-3 text-xs bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 flex items-center gap-1.5 whitespace-nowrap"
             title="Replay AI Voice"
           >
             <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
             <span>Replay Voice</span>
           </button>
 
-          <div className="flex items-center gap-2 bg-slate-900/80 px-3.5 py-1.5 rounded-xl border border-white/10 font-mono text-sm font-semibold text-cyan-400">
-            <Clock className="w-4 h-4 text-cyan-400" />
+          {/* Hindi Translator */}
+          <button
+            onClick={() => setShowHindiModal(true)}
+            className="btn-primary py-1.5 px-2.5 sm:px-3 text-xs bg-gradient-to-r from-amber-600 to-orange-600 shadow-amber-500/20 flex items-center gap-1 whitespace-nowrap"
+            title="Translate Hindi thoughts to Corporate English"
+          >
+            <Languages className="w-3.5 h-3.5" />
+            <span>🇮🇳 Hindi</span>
+          </button>
+
+          {/* Call Timer */}
+          <div className="flex items-center gap-1.5 bg-slate-900/80 px-2.5 sm:px-3.5 py-1.5 rounded-xl border border-white/10 font-mono text-xs sm:text-sm font-semibold text-cyan-400 whitespace-nowrap">
+            <Clock className="w-3.5 h-3.5 text-cyan-400" />
             {formatTime(callDuration)}
           </div>
 
+          {/* Show / Hide Coach */}
           <button
             onClick={() => setShowDrawer(!showDrawer)}
-            className={`btn-secondary py-1.5 px-3 text-xs ${showDrawer ? 'bg-indigo-600/30 border-indigo-500/40 text-indigo-300' : ''}`}
+            className={`btn-secondary py-1.5 px-2.5 sm:px-3 text-xs whitespace-nowrap ${showDrawer ? 'bg-indigo-600/30 border-indigo-500/40 text-indigo-300' : ''}`}
           >
             <Zap className="w-3.5 h-3.5" />
-            <span>{showDrawer ? 'Hide Coach' : 'Show Coach'}</span>
+            <span className="hidden sm:inline">{showDrawer ? 'Hide Coach' : 'Show Coach'}</span>
           </button>
 
+          {/* Desktop End Call Button */}
           <button
-            onClick={() => {
-              clearSilenceTimer();
-              speechEngine.stopSpeaking();
-              speechEngine.stopListening();
-              onEndCall(transcript, callDuration);
-            }}
-            className="btn-danger py-1.5 px-4 text-xs flex items-center gap-1.5 shadow-rose-500/30"
+            onClick={handleEndCallAction}
+            className="hidden sm:flex btn-danger py-1.5 px-4 text-xs items-center gap-1.5 shadow-rose-500/30 whitespace-nowrap font-bold"
           >
             <PhoneOff className="w-3.5 h-3.5" />
             <span>End Call</span>
@@ -556,19 +590,20 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
       )}
 
       {/* Bottom Controls Toolbar */}
-      <div className="glass-panel px-6 py-3.5 rounded-2xl flex flex-wrap items-center justify-between border-white/10 gap-3">
-        <div className="flex items-center gap-3 text-xs text-slate-300 font-medium">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Hands-free 1-on-1 AI Tutor call active • Talk to {avatar.name} naturally</span>
+      <div className="glass-panel p-3.5 sm:px-6 sm:py-3.5 rounded-2xl flex flex-col sm:flex-row items-center justify-between border-white/10 gap-3">
+        <div className="flex items-center gap-2.5 text-xs text-slate-300 font-medium">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+          <span className="text-[11px] sm:text-xs">Hands-free call active • Talk to {avatar.name} naturally</span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
           <button
             onClick={() => handleReplayAISpeech()}
-            className="p-3 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 transition-all"
+            className="p-2.5 sm:p-3 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/40 transition-all flex items-center gap-1.5 text-xs font-semibold"
             title="Replay AI Speech Audio"
           >
-            <Volume2 className="w-5 h-5 text-indigo-400" />
+            <Volume2 className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+            <span className="text-[11px] sm:text-xs">Tap to Hear AI</span>
           </button>
 
           <button
@@ -581,26 +616,35 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
                 startUserListening();
               }
             }}
-            className={`p-3 rounded-xl border transition-all ${
+            className={`p-2.5 sm:p-3 rounded-xl border transition-all ${
               isMicMuted 
                 ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' 
                 : 'bg-slate-900 border-white/10 text-slate-200 hover:bg-white/10'
             }`}
             title={isMicMuted ? "Unmute Mic" : "Mute Mic"}
           >
-            {isMicMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            {isMicMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5" />}
           </button>
 
           <button
             onClick={() => setIsCamEnabled(!isCamEnabled)}
-            className={`p-3 rounded-xl border transition-all ${
+            className={`p-2.5 sm:p-3 rounded-xl border transition-all ${
               !isCamEnabled 
                 ? 'bg-amber-500/20 border-amber-500/40 text-amber-400' 
                 : 'bg-slate-900 border-white/10 text-slate-200 hover:bg-white/10'
             }`}
             title={isCamEnabled ? "Disable Camera" : "Enable Camera"}
           >
-            {isCamEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+            {isCamEnabled ? <Video className="w-4 h-4 sm:w-5 sm:h-5" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
+          </button>
+
+          <button
+            onClick={handleEndCallAction}
+            className="btn-danger py-2 px-3 text-xs flex items-center gap-1.5 shadow-rose-500/30 font-bold"
+            title="End Practice Call"
+          >
+            <PhoneOff className="w-4 h-4" />
+            <span>End Call</span>
           </button>
         </div>
       </div>

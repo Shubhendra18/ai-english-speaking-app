@@ -1,10 +1,10 @@
-// Web Speech Recognition & Gender-Specific Voice Selection Service
+// Web Speech Recognition & Gender-Specific Voice Selection Service (Mobile PWA Enhanced)
 
 class SpeechEngine {
   constructor() {
     this.recognition = null;
     this.isListening = false;
-    this.synth = window.speechSynthesis || null;
+    this.synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
     this.audioCtx = null;
     this.voices = [];
     
@@ -18,6 +18,7 @@ class SpeechEngine {
   }
 
   initRecognition() {
+    if (typeof window === 'undefined') return;
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       this.recognition = new SpeechRecognition();
@@ -68,7 +69,11 @@ class SpeechEngine {
     if (!this.synth) return;
     
     const loadVoices = () => {
-      this.voices = this.synth.getVoices() || [];
+      try {
+        this.voices = this.synth.getVoices() || [];
+      } catch (e) {
+        this.voices = [];
+      }
     };
 
     loadVoices();
@@ -79,6 +84,7 @@ class SpeechEngine {
 
   playSpeakerTestChime() {
     try {
+      if (typeof window === 'undefined') return false;
       const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtxClass) return false;
 
@@ -97,24 +103,30 @@ class SpeechEngine {
       osc.frequency.setValueAtTime(587.33, this.audioCtx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(880, this.audioCtx.currentTime + 0.3);
 
-      gain.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.5);
+      gain.gain.setValueAtTime(0.2, this.audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.4);
 
       osc.connect(gain);
       gain.connect(this.audioCtx.destination);
 
       osc.start();
-      osc.stop(this.audioCtx.currentTime + 0.5);
+      osc.stop(this.audioCtx.currentTime + 0.4);
       return true;
     } catch (e) {
       return false;
     }
   }
 
+  // Explicit Mobile Audio & Web Speech Synthesis Unlocker
   unlockAudioContext() {
     if (this.synth) {
       try {
         this.synth.resume();
+        
+        // Prime mobile TTS engine with a silent utterance to satisfy user gesture restrictions on iOS Safari / Chrome Android
+        const silentUtterance = new SpeechSynthesisUtterance(' ');
+        silentUtterance.volume = 0.01;
+        this.synth.speak(silentUtterance);
       } catch (e) {}
     }
     this.playSpeakerTestChime();
@@ -123,7 +135,9 @@ class SpeechEngine {
   getBestVoice(voiceCode = 'en-IN', isFemale = true) {
     if (!this.synth) return null;
     if (this.voices.length === 0) {
-      this.voices = this.synth.getVoices() || [];
+      try {
+        this.voices = this.synth.getVoices() || [];
+      } catch (e) {}
     }
 
     if (this.voices.length === 0) return null;
@@ -143,20 +157,17 @@ class SpeechEngine {
     }
 
     if (isFemale) {
-      // Find female voice
       const femaleMatch = accentMatches.find(v => 
         femaleKeywords.some(kw => v.name.includes(kw)) &&
         !maleKeywords.some(kw => v.name.includes(kw))
       );
       if (femaleMatch) return femaleMatch;
 
-      // Fallback female voice from all voices
       const anyFemale = this.voices.find(v => 
         femaleKeywords.some(kw => v.name.includes(kw))
       );
       if (anyFemale) return anyFemale;
     } else {
-      // Find male voice
       const maleMatch = accentMatches.find(v => 
         maleKeywords.some(kw => v.name.includes(kw))
       );
@@ -215,11 +226,11 @@ class SpeechEngine {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = 'en-US';
+      utterance.lang = voiceCode || 'en-IN';
     }
 
     utterance.rate = rate || 1.0;
-    utterance.pitch = isFemale ? 1.15 : 0.95; // Female vs Male pitch tuning
+    utterance.pitch = isFemale ? 1.15 : 0.95;
     utterance.volume = 1.0;
 
     let hasEnded = false;
@@ -245,6 +256,7 @@ class SpeechEngine {
       }
     };
 
+    // Mobile fallback timeout if utterance stalls on Android/iOS
     const estimatedDurationMs = Math.max((text.length / 15) * 1000 * (1 / (rate || 1.0)), 2000);
     setTimeout(() => {
       if (!hasEnded) {
@@ -254,7 +266,13 @@ class SpeechEngine {
       }
     }, estimatedDurationMs + 1000);
 
-    this.synth.speak(utterance);
+    try {
+      this.synth.speak(utterance);
+      // Double trigger resume for mobile Chrome/Safari
+      this.synth.resume();
+    } catch (err) {
+      console.warn('Speech synthesis speak error:', err);
+    }
   }
 
   stopSpeaking() {
