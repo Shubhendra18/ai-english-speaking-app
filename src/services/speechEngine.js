@@ -1,4 +1,4 @@
-// Web Speech Recognition & Gender-Specific Voice Selection Service (Mobile PWA & Fallback Audio Enhanced)
+// Web Speech Recognition & Gender-Specific Voice Selection Service (Mobile PWA & Multi-Turn Audio Enhanced)
 
 class SpeechEngine {
   constructor() {
@@ -124,8 +124,6 @@ class SpeechEngine {
     if (this.synth) {
       try {
         this.synth.resume();
-        
-        // Prime mobile TTS engine with a silent utterance to satisfy user gesture restrictions on iOS Safari / Chrome Android
         const silentUtterance = new SpeechSynthesisUtterance(' ');
         silentUtterance.volume = 0.01;
         this.synth.speak(silentUtterance);
@@ -147,7 +145,6 @@ class SpeechEngine {
     const maleKeywords = ['Ravi', 'Prabhat', 'David', 'George', 'Daniel', 'Mark', 'Alex', 'Male', 'Guy'];
     const femaleKeywords = ['Heera', 'Veena', 'Zira', 'Samantha', 'Victoria', 'Karen', 'Female', 'Google हिन्दी', 'Google UK English Female', 'Google US English'];
 
-    // Filter by Accent
     let accentMatches = this.voices.filter(v => 
       v.lang === voiceCode || 
       v.lang.startsWith(voiceCode.substring(0, 2)) ||
@@ -197,53 +194,73 @@ class SpeechEngine {
     }
   }
 
+  // Abort microphone track immediately so mobile speaker hardware is freed up for TTS playback
   stopListening() {
     this.isListening = false;
     if (this.recognition) {
       try {
-        this.recognition.stop();
-      } catch (e) {}
+        this.recognition.abort();
+      } catch (e) {
+        try { this.recognition.stop(); } catch (err) {}
+      }
     }
   }
 
-  // 100% Guaranteed Audio Fallback Player for Mobile Browsers
+  // Multi-sentence Audio Fallback Player for 100% Mobile Reliability
   playAudioFallback(text, onStart, onEnd) {
     try {
       this.stopSpeaking();
 
-      // Truncate for free neural TTS streaming URL limit (~200 chars)
-      const cleanText = text.substring(0, 200).replace(/["'\n\r]/g, ' ');
-      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=en&client=tw-ob`;
+      // Split text into short natural sentences
+      const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+      let index = 0;
 
-      const audio = new Audio(ttsUrl);
-      this.activeAudioFallback = audio;
-      audio.volume = 1.0;
-
-      audio.onplay = () => {
-        if (onStart) onStart();
-        if (this.onSpeakingStateChange) this.onSpeakingStateChange(true);
-      };
-
-      audio.onended = () => {
-        this.activeAudioFallback = null;
-        if (onEnd) onEnd();
-        if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
-      };
-
-      audio.onerror = () => {
-        this.activeAudioFallback = null;
-        if (onEnd) onEnd();
-        if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
-      };
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(err => {
-          console.warn('Audio element play blocked on mobile:', err);
+      const playNextSentence = () => {
+        if (index >= sentences.length) {
+          this.activeAudioFallback = null;
           if (onEnd) onEnd();
           if (this.onSpeakingStateChange) this.onSpeakingStateChange(false);
-        });
-      }
+          return;
+        }
+
+        const sentenceText = sentences[index].trim();
+        index++;
+
+        if (!sentenceText) {
+          playNextSentence();
+          return;
+        }
+
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(sentenceText)}&tl=en&client=tw-ob`;
+        const audio = new Audio(ttsUrl);
+        this.activeAudioFallback = audio;
+        audio.volume = 1.0;
+
+        if (index === 1) {
+          audio.onplay = () => {
+            if (onStart) onStart();
+            if (this.onSpeakingStateChange) this.onSpeakingStateChange(true);
+          };
+        }
+
+        audio.onended = () => {
+          playNextSentence();
+        };
+
+        audio.onerror = () => {
+          playNextSentence();
+        };
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn('Audio sentence play blocked:', err);
+            playNextSentence();
+          });
+        }
+      };
+
+      playNextSentence();
     } catch (e) {
       console.warn('Audio fallback error:', e);
       if (onEnd) onEnd();
@@ -255,7 +272,6 @@ class SpeechEngine {
     this.stopSpeaking();
     this.playSpeakerTestChime();
 
-    // If Web Speech Synthesis is missing, fallback immediately to audio streaming
     if (!this.synth) {
       this.playAudioFallback(text, onStart, onEnd);
       return;
@@ -289,7 +305,6 @@ class SpeechEngine {
       if (onStart) onStart();
       if (this.onSpeakingStateChange) this.onSpeakingStateChange(true);
 
-      // Keep Android Chrome TTS from pausing mid-sentence
       if (this.resumeInterval) clearInterval(this.resumeInterval);
       this.resumeInterval = setInterval(() => {
         if (this.synth && this.synth.speaking) {
@@ -297,7 +312,7 @@ class SpeechEngine {
         } else {
           clearInterval(this.resumeInterval);
         }
-      }, 400);
+      }, 350);
     };
 
     utterance.onend = () => {
@@ -311,24 +326,23 @@ class SpeechEngine {
 
     utterance.onerror = (e) => {
       if (this.resumeInterval) clearInterval(this.resumeInterval);
-      console.warn('SpeechSynthesis error on mobile, trying audio fallback:', e);
+      console.warn('SpeechSynthesis error, falling back to Audio Stream:', e);
       if (!hasEnded) {
         hasEnded = true;
         this.playAudioFallback(text, onStart, onEnd);
       }
     };
 
-    // If mobile Web Speech fails to trigger onstart within 600ms, fallback to audio stream
+    // If SpeechSynthesis fails to fire onstart within 500ms (common on mobile turn 2), switch to Audio Fallback
     setTimeout(() => {
       if (!hasStarted && !hasEnded) {
-        console.warn('SpeechSynthesis silent on mobile, switching to Audio Fallback...');
+        console.warn('SpeechSynthesis silent on turn 2, switching to Audio Fallback...');
         hasEnded = true;
         try { this.synth.cancel(); } catch (e) {}
         this.playAudioFallback(text, onStart, onEnd);
       }
-    }, 600);
+    }, 500);
 
-    // Safety duration fallback timeout
     const estimatedDurationMs = Math.max((text.length / 15) * 1000 * (1 / (rate || 1.0)), 2000);
     setTimeout(() => {
       if (this.resumeInterval) clearInterval(this.resumeInterval);

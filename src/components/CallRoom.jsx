@@ -117,19 +117,23 @@ export default function CallRoom({ topic, avatar, settings, onEndCall }) {
     speechEngine.stopListening();
     clearSilenceTimer();
 
-    const targetVoiceCode = avatar.voiceCode || settings?.voiceAccent || 'en-IN';
+    // 150ms delay allows mobile OS audio hardware to release microphone track before playing speaker audio
+    setTimeout(() => {
+      speechEngine.unlockAudioContext();
+      const targetVoiceCode = avatar.voiceCode || settings?.voiceAccent || 'en-IN';
 
-    speechEngine.speak(
-      text,
-      targetVoiceCode,
-      settings?.speechRate || (skillLevel === 'beginner' ? 0.9 : 1.0),
-      isFemaleAvatar,
-      () => setIsSpeaking(true),
-      () => {
-        setIsSpeaking(false);
-        startUserListening();
-      }
-    );
+      speechEngine.speak(
+        text,
+        targetVoiceCode,
+        settings?.speechRate || (skillLevel === 'beginner' ? 0.9 : 1.0),
+        isFemaleAvatar,
+        () => setIsSpeaking(true),
+        () => {
+          setIsSpeaking(false);
+          startUserListening();
+        }
+      );
+    }, 150);
   };
 
   // Replay AI Voice
